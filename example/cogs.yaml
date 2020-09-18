@@ -1,7 +1,7 @@
 version: 0
 tasks:
   - name: build
-    image: 'python:3'
+    image: 'docker.io/library/python:3'
     env_vars:
       - FOO: 'BAR'
     before_script:
