@@ -18,6 +18,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/user"
+	"runtime"
 	"time"
 
 	docker "github.com/docker/docker/client"
@@ -27,6 +29,7 @@ const (
 	perpetualCommand = "sleep"
 	defaultTimeout   = "3600"
 	ciWorkingDir     = "/ci"
+	fallbackUserId   = "0"
 )
 
 type task struct {
@@ -66,7 +69,7 @@ func main() {
 		log.Fatalln("Error parsing yaml", err)
 	}
 
-	client, err := docker.NewEnvClient()
+	client, err := docker.NewClientWithOpts(docker.FromEnv)
 	if err != nil {
 		log.Fatalln("Error creating docker client", err)
 	}
@@ -112,6 +115,7 @@ func runTask(ctx context.Context, t task, client *docker.Client) error {
 
 	createdContainer, err := client.ContainerCreate(ctx,
 		&container.Config{
+			User:       userId(),
 			Image:      t.Image,
 			WorkingDir: ciWorkingDir,
 			Cmd:        []string{perpetualCommand, defaultTimeout},
@@ -205,6 +209,7 @@ func pullImage(ctx context.Context, t task, client *docker.Client, err error) er
 
 func runScript(err error, client *docker.Client, ctx context.Context, createdContainer container.ContainerCreateCreatedBody, script []string) (int, error) {
 	execConfig := types.ExecConfig{
+		User:         userId(),
 		Privileged:   false,
 		Tty:          false,
 		AttachStdin:  true,
@@ -282,4 +287,18 @@ func mustWrite(conn net.Conn, str string) error {
 		return errors.Wrap(err, "error writing to stream")
 	}
 	return nil
+}
+
+func userId() string {
+	if runtime.GOOS == "linux" {
+		userInfo, err := user.Current()
+
+		if err != nil {
+			return fallbackUserId
+		}
+
+		return userInfo.Uid
+	}
+
+	return fallbackUserId
 }
