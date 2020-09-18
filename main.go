@@ -7,6 +7,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
@@ -24,6 +25,7 @@ const (
 	perpetualCommand = "sleep"
 	defaultTimeout   = "3600"
 	defaultUserID    = "1000"
+	ciWorkingDir     = "/ci"
 )
 
 type task struct {
@@ -95,15 +97,31 @@ func runTask(ctx context.Context, t task, client *docker.Client) error {
 	log.Println("Starting containers")
 
 	containerConfig := &container.Config{
-		User:  defaultUserID,
-		Image: t.Image,
-		Cmd:   []string{perpetualCommand, defaultTimeout},
+		User:       defaultUserID,
+		Image:      t.Image,
+		WorkingDir: ciWorkingDir,
+		Cmd:        []string{perpetualCommand, defaultTimeout},
+	}
+
+	cwd, err := os.Getwd()
+
+	if err != nil {
+		return errors.Wrap(err, "Cannot determine cwd")
 	}
 
 	containerName := fmt.Sprintf("%s-%d", t.Name, time.Now().Unix())
 	createdContainer, err := client.ContainerCreate(ctx,
 		containerConfig,
-		&container.HostConfig{},
+		&container.HostConfig{
+			Mounts: []mount.Mount{
+				{
+					Type:     mount.TypeBind,
+					Source:   cwd,
+					Target:   ciWorkingDir,
+					ReadOnly: false,
+				},
+			},
+		},
 		&network.NetworkingConfig{}, containerName)
 
 	if err != nil {
