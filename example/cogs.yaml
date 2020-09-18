@@ -1,0 +1,13 @@
+version: 0
+tasks:
+  - name: build
+    image: 'python:3'
+    env_vars:
+      - FOO: 'BAR'
+    before_script:
+      - python --version
+    script:
+      - python -c 'print("Hello World")'
+      - python -c 'import sys; print("Hello World", file=sys.stderr)'
+    after_script:
+      - echo 'Done'
