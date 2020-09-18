@@ -220,7 +220,7 @@ func runScript(err error, client *docker.Client, ctx context.Context, createdCon
 		return -1, errors.Wrap(err, "cannot execute command inside container")
 	}
 
-	execAttached, err := client.ContainerExecAttach(ctx, execCreated.ID, execConfig)
+	execAttached, err := client.ContainerExecAttach(ctx, execCreated.ID, types.ExecStartCheck{})
 
 	if err != nil {
 		return -1, errors.Wrap(err, "cannot attach to IO of running command")
