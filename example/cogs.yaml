@@ -5,7 +5,10 @@ tasks:
     env_vars:
       - FOO: 'BAR'
     before_script:
+      - pwd
+      - id
       - python --version
+      - ls -lah
     script:
       - python -c 'print("Hello World")'
       - python -c 'import sys; print("Hello World", file=sys.stderr)'

@@ -30,9 +30,9 @@ type task struct {
 	Name         string
 	Image        string
 	EnvVars      map[string]string
-	BeforeScript []string
+	BeforeScript []string `yaml:"before_script"`
 	Script       []string
-	AfterScript  []string
+	AfterScript  []string `yaml:"after_script"`
 }
 
 type cogsFile struct {
@@ -140,14 +140,14 @@ func runTask(ctx context.Context, t task, client *docker.Client) error {
 		log.Fatalf("before_script failed with exit code %d\n", exitCode)
 	}
 
-	log.Println("Executing before_script")
+	log.Println("Executing script")
 	scriptExitCode, err := runScript(err, client, ctx, createdContainer, t.Script)
 
 	if err != nil {
 		return errors.Wrap(err, "Error executing script")
 	}
 
-	log.Println("Executing before_script")
+	log.Println("Executing after_script")
 	exitCode, err = runScript(err, client, ctx, createdContainer, t.AfterScript)
 
 	if err != nil {
