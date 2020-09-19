@@ -1,4 +1,3 @@
-version: 0
 tasks:
   - name: build
     image: 'docker.io/library/python:3'

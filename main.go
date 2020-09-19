@@ -10,9 +10,9 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/kinematic-ci/cogs/cogsfile"
 	"github.com/mattn/go-isatty"
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
 	"io"
 	"io/ioutil"
 	"log"
@@ -32,19 +32,6 @@ const (
 	fallbackUserId   = "0"
 )
 
-type task struct {
-	Name         string
-	Image        string
-	EnvVars      map[string]string
-	BeforeScript []string `yaml:"before_script"`
-	Script       []string
-	AfterScript  []string `yaml:"after_script"`
-}
-
-type cogsFile struct {
-	Tasks []task
-}
-
 type arguments struct {
 	Spec string `arg:"positional" default:"cogs.yaml"`
 }
@@ -55,18 +42,16 @@ func main() {
 
 	arg.MustParse(&args)
 
-	specFile, err := ioutil.ReadFile(args.Spec)
+	bytes, err := ioutil.ReadFile(args.Spec)
 
 	if err != nil {
 		log.Fatalln("Error opening Cogsfile:", err)
 	}
 
-	var cogs cogsFile
-
-	err = yaml.Unmarshal(specFile, &cogs)
+	cogs, err := cogsfile.Load(bytes)
 
 	if err != nil {
-		log.Fatalln("Error parsing yaml", err)
+		log.Fatalln("Error parsing Cogsfile", err)
 	}
 
 	client, err := docker.NewClientWithOpts(docker.FromEnv)
@@ -85,8 +70,8 @@ func main() {
 	log.Println("Task completed successfully")
 }
 
-func runCogs(ctx context.Context, k cogsFile, client *docker.Client) error {
-	for _, task := range k.Tasks {
+func runCogs(ctx context.Context, c *cogsfile.Cogsfile, client *docker.Client) error {
+	for _, task := range c.Tasks {
 		log.Printf("Executing task %s\n", task.Name)
 		err := runTask(ctx, task, client)
 		if err != nil {
@@ -97,7 +82,7 @@ func runCogs(ctx context.Context, k cogsFile, client *docker.Client) error {
 	return nil
 }
 
-func runTask(ctx context.Context, t task, client *docker.Client) error {
+func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error {
 	log.Println("Starting containers")
 
 	cwd, err := os.Getwd()
@@ -191,7 +176,7 @@ func runTask(ctx context.Context, t task, client *docker.Client) error {
 	return nil
 }
 
-func pullImage(ctx context.Context, t task, client *docker.Client, err error) error {
+func pullImage(ctx context.Context, t cogsfile.Task, client *docker.Client, err error) error {
 	res, err := client.ImagePull(ctx, t.Image, types.ImagePullOptions{})
 
 	if err != nil {
