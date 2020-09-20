@@ -15,6 +15,7 @@ import (
 )
 
 type arguments struct {
+	Target       string `arg:"positional" default:""`
 	Spec         string `default:"cogs.yaml"`
 	AlwaysDocker bool   `arg:"-d,--always-docker" help:"Always use Docker executor"`
 	AlwaysShell  bool   `arg:"-s,--always-shell" help:"Always use Shell executor"`
@@ -57,7 +58,7 @@ func main() {
 
 	ctx := context.Background()
 
-	err = runCogs(ctx, cogs, opts, client)
+	err = runCogs(ctx, cogs, args.Target, opts, client)
 
 	if err != nil {
 		log.Fatalln("Task failed", err)
@@ -66,16 +67,14 @@ func main() {
 	log.Println("Task completed successfully")
 }
 
-func runCogs(ctx context.Context, c *cogsfile.Cogsfile, opts options, client *docker.Client) error {
+func runCogs(ctx context.Context, c *cogsfile.Cogsfile, target string, opts options, client *docker.Client) error {
 	for _, task := range c.Tasks {
-		log.Printf("Executing task %s\n", task.Name)
-		err := runTask(ctx, task, opts, client)
-		if err != nil {
-			return err
+		if target == "" || task.Name == target {
+			log.Printf("Executing task %s\n", task.Name)
+			return runTask(ctx, task, opts, client)
 		}
-
 	}
-	return nil
+	return errors.Errorf("target '%s' not found", target)
 }
 
 const defaultShell = "/bin/sh"
