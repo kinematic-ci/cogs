@@ -1,6 +1,8 @@
 tasks:
   - name: build
     executor: shell
+    depends_on:
+      - test
     before_script:
       - go version
     script:
@@ -12,4 +14,4 @@ tasks:
       - go version
       - echo $SHELL
     script:
-      - go test ./...
+      - go test -coverprofile coverage.out ./...

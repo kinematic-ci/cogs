@@ -6,6 +6,7 @@ import (
 	docker "github.com/docker/docker/client"
 	"github.com/kinematic-ci/cogs/cogsfile"
 	"github.com/kinematic-ci/cogs/executor"
+	"github.com/kinematic-ci/cogs/runner"
 	"github.com/kinematic-ci/cogs/utils"
 	"github.com/pkg/errors"
 	"io"
@@ -14,19 +15,18 @@ import (
 	"os"
 )
 
-type arguments struct {
-	Target       string `arg:"positional" default:""`
-	Spec         string `default:"cogs.yaml"`
-	AlwaysDocker bool   `arg:"-d,--always-docker" help:"Always use Docker executor"`
-	AlwaysShell  bool   `arg:"-s,--always-shell" help:"Always use Shell executor"`
-}
-
 type options struct {
 	alwaysDocker bool
 	alwaysShell  bool
 }
 
 func main() {
+	type arguments struct {
+		Target       string `arg:"positional" default:""`
+		Spec         string `default:"cogs.yaml"`
+		AlwaysDocker bool   `arg:"-d,--always-docker" help:"Always use Docker executor"`
+		AlwaysShell  bool   `arg:"-s,--always-shell" help:"Always use Shell executor"`
+	}
 
 	log.SetPrefix("[⚙️ ] ")
 
@@ -68,13 +68,26 @@ func main() {
 }
 
 func runCogs(ctx context.Context, c *cogsfile.Cogsfile, target string, opts options, client *docker.Client) error {
-	for _, task := range c.Tasks {
-		if target == "" || task.Name == target {
-			log.Printf("Executing task %s\n", task.Name)
-			return runTask(ctx, task, opts, client)
+	if target == "" {
+		target = c.Tasks[0].Name
+	}
+
+	taskList, err := runner.ExecutionOrder(c.Tasks, target)
+
+	if err != nil {
+		return errors.Wrap(err, "unable to determine execution order")
+	}
+
+	for _, task := range taskList.Values() {
+		log.Printf("Executing task %s\n", task.Name)
+		err := runTask(ctx, task, opts, client)
+
+		if err != nil {
+			return errors.Wrap(err, "error executing task")
 		}
 	}
-	return errors.Errorf("target '%s' not found", target)
+
+	return nil
 }
 
 const defaultShell = "/bin/sh"

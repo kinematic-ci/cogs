@@ -20,6 +20,7 @@ type Task struct {
 	BeforeScript []string          `yaml:"before_script"`
 	Script       []string
 	AfterScript  []string `yaml:"after_script"`
+	DependsOn    []string `yaml:"depends_on"`
 }
 
 type Cogsfile struct {
