@@ -27,7 +27,7 @@ type options struct {
 
 func main() {
 
-	log.SetPrefix("[⚙️  cogs] ")
+	log.SetPrefix("[⚙️ ] ")
 
 	args := arguments{}
 
