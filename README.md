@@ -14,8 +14,14 @@ We are working on making pre-built releases available
 
 Cogs uses `cogs` as its build tool.
 
+To create a `cogs` binary run:
+
+```
+cogs build
+```
+
 To run all tests execute:
 
 ```
-cogs
+cogs test
 ```
