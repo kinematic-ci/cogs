@@ -84,6 +84,10 @@ func NewDockerExecutor(name, image, workingDirectory, shell string, args []strin
 	}
 }
 
+func (e *DockerExecutor) Name() string {
+	return "docker"
+}
+
 func (e *DockerExecutor) startContainer(ctx context.Context) error {
 	err := pullImage(ctx, e.image, e.client)
 

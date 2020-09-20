@@ -13,6 +13,7 @@ type Session interface {
 }
 
 type Executor interface {
+	Name() string
 	Session(ctx context.Context) (Session, error)
 	Close(ctx context.Context) error
 }

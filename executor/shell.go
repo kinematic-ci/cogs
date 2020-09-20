@@ -73,6 +73,10 @@ type ShellExecutor struct {
 	WorkingDirectory string
 }
 
+func (s *ShellExecutor) Name() string {
+	return "shell"
+}
+
 func NewShellExecutor(workingDirectory, shell string, shellArguments []string) *ShellExecutor {
 	return &ShellExecutor{WorkingDirectory: workingDirectory, Shell: shell, ShellArguments: shellArguments}
 }

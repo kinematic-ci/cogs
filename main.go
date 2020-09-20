@@ -15,14 +15,28 @@ import (
 )
 
 type arguments struct {
-	Spec string `arg:"positional" default:"cogs.yaml"`
+	Spec         string `default:"cogs.yaml"`
+	AlwaysDocker bool   `arg:"-d,--always-docker" help:"Always use Docker executor"`
+	AlwaysShell  bool   `arg:"-s,--always-shell" help:"Always use Shell executor"`
+}
+
+type options struct {
+	alwaysDocker bool
+	alwaysShell  bool
 }
 
 func main() {
 
+	log.SetPrefix("[⚙️  cogs] ")
+
 	args := arguments{}
 
 	arg.MustParse(&args)
+
+	opts := options{
+		alwaysDocker: args.AlwaysDocker,
+		alwaysShell:  args.AlwaysShell,
+	}
 
 	bytes, err := ioutil.ReadFile(args.Spec)
 
@@ -43,7 +57,7 @@ func main() {
 
 	ctx := context.Background()
 
-	err = runCogs(ctx, cogs, client)
+	err = runCogs(ctx, cogs, opts, client)
 
 	if err != nil {
 		log.Fatalln("Task failed", err)
@@ -52,10 +66,10 @@ func main() {
 	log.Println("Task completed successfully")
 }
 
-func runCogs(ctx context.Context, c *cogsfile.Cogsfile, client *docker.Client) error {
+func runCogs(ctx context.Context, c *cogsfile.Cogsfile, opts options, client *docker.Client) error {
 	for _, task := range c.Tasks {
 		log.Printf("Executing task %s\n", task.Name)
-		err := runTask(ctx, task, client)
+		err := runTask(ctx, task, opts, client)
 		if err != nil {
 			return err
 		}
@@ -66,9 +80,7 @@ func runCogs(ctx context.Context, c *cogsfile.Cogsfile, client *docker.Client) e
 
 const defaultShell = "/bin/sh"
 
-func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error {
-	log.Println("Starting containers")
-
+func runTask(ctx context.Context, t cogsfile.Task, opts options, client *docker.Client) error {
 	cwd, err := os.Getwd()
 
 	if err != nil {
@@ -80,23 +92,34 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 
 	var e executor.Executor
 
-	if t.Executor == cogsfile.Docker {
+	if opts.alwaysDocker {
+		log.Println("Overriding executor to use docker")
 		e = executor.NewDockerExecutor(t.Name, t.Image, cwd, shell, shellArgs, client)
-	} else {
+	} else if opts.alwaysShell {
+		log.Println("Overriding executor to use shell")
 		e = executor.NewShellExecutor(cwd, shell, shellArgs)
+	} else {
+		switch t.Executor {
+		case cogsfile.Docker:
+			e = executor.NewDockerExecutor(t.Name, t.Image, cwd, shell, shellArgs, client)
+		case cogsfile.Shell:
+			e = executor.NewShellExecutor(cwd, shell, shellArgs)
+		default:
+			log.Panicf("Unknown executor: %s\n", t.Executor)
+		}
 	}
 
+	log.Printf("Using executor: %s\n", e.Name())
+
 	defer func() {
-		log.Println("Stopping containers")
+		log.Println("Closing executor")
 
 		err = e.Close(ctx)
 
 		if err != nil {
-			log.Fatalln("Error stopping containers", err)
+			log.Fatalln("Error closing executor", err)
 		}
 	}()
-
-	log.Println("Creating build")
 
 	log.Println("Executing before_script")
 	exitCode, err := runScript(ctx, e, t.BeforeScript)
@@ -137,8 +160,8 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 func getShellArgs(args []string) []string {
 	combinedArgs := []string{"-xe"}
 
-	for _, arg := range args {
-		combinedArgs = append(combinedArgs, arg)
+	for _, a := range args {
+		combinedArgs = append(combinedArgs, a)
 	}
 
 	return combinedArgs
