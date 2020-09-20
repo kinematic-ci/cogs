@@ -1,35 +1,16 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"github.com/alexflint/go-arg"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/pkg/jsonmessage"
+	docker "github.com/docker/docker/client"
 	"github.com/kinematic-ci/cogs/cogsfile"
-	"github.com/mattn/go-isatty"
+	"github.com/kinematic-ci/cogs/executor"
 	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
-	"os/user"
-	"runtime"
-	"time"
-
-	docker "github.com/docker/docker/client"
-)
-
-const (
-	perpetualCommand = "sleep"
-	defaultTimeout   = "3600"
-	ciWorkingDir     = "/ci"
-	fallbackUserId   = "0"
 )
 
 type arguments struct {
@@ -91,47 +72,12 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 		return errors.Wrap(err, "cannot determine cwd")
 	}
 
-	err = pullImage(ctx, t, client, err)
-	if err != nil {
-		return errors.Wrap(err, "cannot pull docker image")
-	}
-
-	containerName := fmt.Sprintf("%s-%d", t.Name, time.Now().Unix())
-
-	createdContainer, err := client.ContainerCreate(ctx,
-		&container.Config{
-			User:       userId(),
-			Image:      t.Image,
-			WorkingDir: ciWorkingDir,
-			Cmd:        []string{perpetualCommand, defaultTimeout},
-		},
-		&container.HostConfig{
-			Mounts: []mount.Mount{
-				{
-					Type:     mount.TypeBind,
-					Source:   cwd,
-					Target:   ciWorkingDir,
-					ReadOnly: false,
-				},
-			},
-		},
-		&network.NetworkingConfig{}, containerName)
-
-	if err != nil {
-		return err
-	}
-
-	err = client.ContainerStart(ctx, createdContainer.ID, types.ContainerStartOptions{})
-
-	if err != nil {
-		return errors.Wrap(err, "error starting container")
-	}
+	e := executor.NewDockerExecutor(client, t, cwd)
 
 	defer func() {
 		log.Println("Stopping containers")
 
-		timeout := 1 * time.Second
-		err = client.ContainerStop(ctx, createdContainer.ID, &timeout)
+		err = e.Close(ctx)
 
 		if err != nil {
 			log.Fatalln("Error stopping containers", err)
@@ -141,7 +87,7 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 	log.Println("Creating build")
 
 	log.Println("Executing before_script")
-	exitCode, err := runScript(err, client, ctx, createdContainer, t.BeforeScript)
+	exitCode, err := runScript(ctx, e, t.BeforeScript)
 
 	if err != nil {
 		return errors.Wrap(err, "error executing before_script")
@@ -152,14 +98,14 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 	}
 
 	log.Println("Executing script")
-	scriptExitCode, err := runScript(err, client, ctx, createdContainer, t.Script)
+	scriptExitCode, err := runScript(ctx, e, t.Script)
 
 	if err != nil {
 		return errors.Wrap(err, "error executing script")
 	}
 
 	log.Println("Executing after_script")
-	exitCode, err = runScript(err, client, ctx, createdContainer, t.AfterScript)
+	exitCode, err = runScript(ctx, e, t.AfterScript)
 
 	if err != nil {
 		return errors.Wrap(err, "error executing after_script")
@@ -176,44 +122,12 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 	return nil
 }
 
-func pullImage(ctx context.Context, t cogsfile.Task, client *docker.Client, err error) error {
-	res, err := client.ImagePull(ctx, t.Image, types.ImagePullOptions{})
+func runScript(ctx context.Context, e executor.Executor, script []string) (int, error) {
+
+	session, err := e.Session(ctx)
 
 	if err != nil {
-		return errors.Wrap(err, "cannot pull image from registry")
-	}
-
-	err = jsonmessage.DisplayJSONMessagesStream(res, os.Stdout, os.Stdout.Fd(), isatty.IsTerminal(os.Stdout.Fd()), nil)
-
-	if err != nil {
-		return errors.Wrap(err, "cannot display progress information for image pull")
-	}
-
-	return nil
-}
-
-func runScript(err error, client *docker.Client, ctx context.Context, createdContainer container.ContainerCreateCreatedBody, script []string) (int, error) {
-	execConfig := types.ExecConfig{
-		User:         userId(),
-		Privileged:   false,
-		Tty:          false,
-		AttachStdin:  true,
-		AttachStderr: true,
-		AttachStdout: true,
-		Env:          nil,
-		Cmd:          []string{"/bin/sh", "-xe"},
-	}
-
-	execCreated, err := client.ContainerExecCreate(ctx, createdContainer.ID, execConfig)
-
-	if err != nil {
-		return -1, errors.Wrap(err, "cannot execute command inside container")
-	}
-
-	execAttached, err := client.ContainerExecAttach(ctx, execCreated.ID, types.ExecStartCheck{})
-
-	if err != nil {
-		return -1, errors.Wrap(err, "cannot attach to IO of running command")
+		return -1, errors.Wrap(err, "unable to create session")
 	}
 
 	log.Println("Streaming logs")
@@ -221,7 +135,7 @@ func runScript(err error, client *docker.Client, ctx context.Context, createdCon
 	done := make(chan error)
 
 	go func() {
-		err = streamOutput(execAttached.Reader)
+		err = streamOutput(session.Reader())
 
 		if err != nil {
 			done <- errors.Wrap(err, "error reading output from container")
@@ -230,14 +144,14 @@ func runScript(err error, client *docker.Client, ctx context.Context, createdCon
 	}()
 
 	for _, cmd := range script {
-		err = mustWrite(execAttached.Conn, cmd)
+		err = mustWrite(session.Writer(), cmd)
 
 		if err != nil {
 			return -1, errors.Wrap(err, "error executing command")
 		}
 	}
 
-	err = execAttached.CloseWrite()
+	err = session.CloseWrite()
 
 	if err != nil {
 		return -1, errors.Wrap(err, "error closing IO")
@@ -245,17 +159,17 @@ func runScript(err error, client *docker.Client, ctx context.Context, createdCon
 
 	<-done
 
-	result, err := client.ContainerExecInspect(ctx, execCreated.ID)
+	result, err := session.End(ctx)
 
 	if err != nil {
-		return -1, errors.Wrap(err, "error inspecting command execution")
+		return -1, errors.Wrap(err, "error ending session")
 	}
 
-	return result.ExitCode, nil
+	return result, nil
 
 }
 
-func streamOutput(reader *bufio.Reader) error {
+func streamOutput(reader io.Reader) error {
 	size, err := io.Copy(os.Stdout, reader)
 	if err != nil {
 		return errors.Wrap(err, "error reading from stream")
@@ -265,25 +179,11 @@ func streamOutput(reader *bufio.Reader) error {
 	return nil
 }
 
-func mustWrite(conn net.Conn, str string) error {
-	_, err := conn.Write([]byte(str + "\n"))
+func mustWrite(writer io.Writer, str string) error {
+	_, err := writer.Write([]byte(str + "\n"))
 
 	if err != nil {
 		return errors.Wrap(err, "error writing to stream")
 	}
 	return nil
-}
-
-func userId() string {
-	if runtime.GOOS == "linux" {
-		userInfo, err := user.Current()
-
-		if err != nil {
-			return fallbackUserId
-		}
-
-		return userInfo.Uid
-	}
-
-	return fallbackUserId
 }
