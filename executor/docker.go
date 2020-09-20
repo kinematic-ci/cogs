@@ -9,7 +9,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/kinematic-ci/cogs/cogsfile"
 	"github.com/mattn/go-isatty"
 	"github.com/pkg/errors"
 	"io"
@@ -70,13 +69,17 @@ type DockerExecutor struct {
 	containerID      string
 	task             string
 	workingDirectory string
+	shell            string
+	shellArgs        []string
 }
 
-func NewDockerExecutor(client *docker.Client, task cogsfile.Task, workingDirectory string) *DockerExecutor {
+func NewDockerExecutor(name, image, workingDirectory, shell string, args []string, client *docker.Client) *DockerExecutor {
 	return &DockerExecutor{
 		client:           client,
-		image:            task.Image,
-		task:             task.Name,
+		image:            image,
+		task:             name,
+		shell:            shell,
+		shellArgs:        args,
 		workingDirectory: workingDirectory,
 	}
 }
@@ -132,6 +135,8 @@ func (e *DockerExecutor) Session(ctx context.Context) (Session, error) {
 		}
 	}
 
+	cmd := makeCommand(e.shell, e.shellArgs)
+
 	execConfig := types.ExecConfig{
 		User:         userId(),
 		Privileged:   false,
@@ -140,7 +145,7 @@ func (e *DockerExecutor) Session(ctx context.Context) (Session, error) {
 		AttachStderr: true,
 		AttachStdout: true,
 		Env:          nil,
-		Cmd:          []string{"/bin/sh", "-xe"},
+		Cmd:          cmd,
 	}
 
 	execCreated, err := e.client.ContainerExecCreate(ctx, e.containerID, execConfig)
@@ -152,6 +157,16 @@ func (e *DockerExecutor) Session(ctx context.Context) (Session, error) {
 	execResponse, err := e.client.ContainerExecAttach(ctx, execCreated.ID, types.ExecStartCheck{})
 
 	return newSession(execCreated.ID, execResponse, e.client), nil
+}
+
+func makeCommand(shell string, args []string) []string {
+	cmd := []string{shell}
+
+	for _, arg := range args {
+		cmd = append(cmd, arg)
+	}
+
+	return cmd
 }
 
 func (e *DockerExecutor) Close(ctx context.Context) error {

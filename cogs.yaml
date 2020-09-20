@@ -1,8 +1,9 @@
 tasks:
   - name: test
-    executor: docker
+    executor: shell
     image: 'docker.io/library/golang:1.14'
     before_script:
       - go version
+      - echo $SHELL
     script:
       - go test ./...

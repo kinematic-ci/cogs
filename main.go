@@ -6,6 +6,7 @@ import (
 	docker "github.com/docker/docker/client"
 	"github.com/kinematic-ci/cogs/cogsfile"
 	"github.com/kinematic-ci/cogs/executor"
+	"github.com/kinematic-ci/cogs/utils"
 	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
@@ -63,6 +64,8 @@ func runCogs(ctx context.Context, c *cogsfile.Cogsfile, client *docker.Client) e
 	return nil
 }
 
+const defaultShell = "/bin/sh"
+
 func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error {
 	log.Println("Starting containers")
 
@@ -72,7 +75,16 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 		return errors.Wrap(err, "cannot determine cwd")
 	}
 
-	e := executor.NewDockerExecutor(client, t, cwd)
+	shell := utils.StringOrDefault(t.Shell, defaultShell)
+	shellArgs := getShellArgs(t.ShellArgs)
+
+	var e executor.Executor
+
+	if t.Executor == cogsfile.Docker {
+		e = executor.NewDockerExecutor(t.Name, t.Image, cwd, shell, shellArgs, client)
+	} else {
+		e = executor.NewShellExecutor(cwd, shell, shellArgs)
+	}
 
 	defer func() {
 		log.Println("Stopping containers")
@@ -120,6 +132,16 @@ func runTask(ctx context.Context, t cogsfile.Task, client *docker.Client) error 
 	}
 
 	return nil
+}
+
+func getShellArgs(args []string) []string {
+	combinedArgs := []string{"-xe"}
+
+	for _, arg := range args {
+		combinedArgs = append(combinedArgs, arg)
+	}
+
+	return combinedArgs
 }
 
 func runScript(ctx context.Context, e executor.Executor, script []string) (int, error) {

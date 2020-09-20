@@ -7,12 +7,15 @@ import (
 
 const (
 	Docker = "docker"
+	Shell  = "shell"
 )
 
 type Task struct {
 	Name         string
 	Executor     string
 	Image        string
+	Shell        string
+	ShellArgs    []string          `yaml:"shell_args"`
 	EnvVars      map[string]string `yaml:"env_vars"`
 	BeforeScript []string          `yaml:"before_script"`
 	Script       []string
@@ -61,11 +64,11 @@ func validateTask(task Task) error {
 		return errors.New("name is required")
 	}
 
-	if task.Executor != Docker {
+	if task.Executor != Docker && task.Executor != Shell {
 		return errors.Errorf("unsupported executor: %s", task.Executor)
 	}
 
-	if task.Image == "" {
+	if task.Executor == Docker && task.Image == "" {
 		return errors.New("image is required for docker executor")
 	}
 
