@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	Docker = "docker"
-	Shell  = "shell"
+	Docker          = "docker"
+	Shell           = "shell"
+	DefaultFileName = "cogs.yaml"
 )
 
 type Task struct {
