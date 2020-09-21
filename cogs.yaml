@@ -1,5 +1,6 @@
 tasks:
   - name: build
+    description: "Compile project"
     executor: shell
     depends_on:
       - test
@@ -8,6 +9,7 @@ tasks:
     script:
       - go build
   - name: test
+    description: "Run unit tests"
     executor: docker
     image: 'docker.io/library/golang:1.14'
     before_script:

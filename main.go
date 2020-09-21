@@ -10,7 +10,8 @@ import (
 
 func main() {
 	type arguments struct {
-		Run *cli.RunArgs `arg:"subcommand:run" help:"Run a target"`
+		Run   *cli.RunArgs   `arg:"subcommand:run" help:"Run a target"`
+		Tasks *cli.TasksArgs `arg:"subcommand:tasks" help:"Show all available targets"`
 	}
 
 	log.SetPrefix("[⚙️ ] ")
@@ -22,6 +23,8 @@ func main() {
 	switch {
 	case args.Run != nil:
 		cli.Run(args.Run)
+	case args.Tasks != nil:
+		cli.Tasks(args.Tasks)
 	default:
 		fallbackToRun()
 	}

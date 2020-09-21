@@ -13,6 +13,7 @@ const (
 
 type Task struct {
 	Name         string
+	Description  string
 	Executor     string
 	Image        string
 	Shell        string
