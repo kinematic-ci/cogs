@@ -15,17 +15,21 @@ import (
 	"os"
 )
 
+const defaultShell = "/bin/sh"
+
 type options struct {
 	alwaysDocker bool
 	alwaysShell  bool
+	planOnly     bool
 }
 
 func main() {
 	type arguments struct {
-		Target       string `arg:"positional" default:""`
-		Spec         string `default:"cogs.yaml"`
+		Target       string `arg:"positional" default:"" help:"A task to execute. Defaults to the first task in Cogsfile if not specified"`
+		File         string `arg:"-f,--file" help:"Cogsfile for task definitions" default:"cogs.yaml"`
 		AlwaysDocker bool   `arg:"-d,--always-docker" help:"Always use Docker executor"`
 		AlwaysShell  bool   `arg:"-s,--always-shell" help:"Always use Shell executor"`
+		PlanOnly     bool   `arg:"-p,--plan-only" help:"Show execution plan and exit"`
 	}
 
 	log.SetPrefix("[⚙️ ] ")
@@ -37,9 +41,10 @@ func main() {
 	opts := options{
 		alwaysDocker: args.AlwaysDocker,
 		alwaysShell:  args.AlwaysShell,
+		planOnly:     args.PlanOnly,
 	}
 
-	bytes, err := ioutil.ReadFile(args.Spec)
+	bytes, err := ioutil.ReadFile(args.File)
 
 	if err != nil {
 		log.Fatalln("Error opening Cogsfile:", err)
@@ -79,18 +84,20 @@ func runCogs(ctx context.Context, c *cogsfile.Cogsfile, target string, opts opti
 	}
 
 	for _, task := range taskList.Values() {
-		log.Printf("Executing task %s\n", task.Name)
-		err := runTask(ctx, task, opts, client)
+		if !opts.planOnly {
+			log.Printf("Executing task %s\n", task.Name)
+			err := runTask(ctx, task, opts, client)
 
-		if err != nil {
-			return errors.Wrap(err, "error executing task")
+			if err != nil {
+				return errors.Wrap(err, "error executing task")
+			}
+		} else {
+			log.Printf("Will execute %s\n", task.Name)
 		}
 	}
 
 	return nil
 }
-
-const defaultShell = "/bin/sh"
 
 func runTask(ctx context.Context, t cogsfile.Task, opts options, client *docker.Client) error {
 	cwd, err := os.Getwd()
